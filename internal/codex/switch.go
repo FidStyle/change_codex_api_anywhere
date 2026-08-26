@@ -37,6 +37,7 @@ var (
 	modelProviderPattern = regexp.MustCompile(`^model_provider\s*=\s*"([^"]+)"\s*$`)
 	openAIKeyPattern     = regexp.MustCompile(`("OPENAI_API_KEY"\s*:\s*)("(?:\\.|[^"\\])*"|null)`)
 	baseURLLinePattern   = regexp.MustCompile(`^(\s*)base_url\s*=`)
+	baseURLValuePattern  = regexp.MustCompile(`^base_url\s*=\s*"([^"]*)"$`)
 )
 
 func Apply(req SwitchRequest) (*SwitchResult, error) {
@@ -59,6 +60,12 @@ func Apply(req SwitchRequest) (*SwitchResult, error) {
 	}
 
 	nextConfig, baseURLChanged, err := PatchBaseURL(configData, provider, req.BaseURL)
+	if err != nil && strings.TrimSpace(req.Provider) == "" {
+		if inferredProvider, inferErr := findProviderByBaseURL(configData, req.BaseURL); inferErr == nil {
+			provider = inferredProvider
+			nextConfig, baseURLChanged, err = PatchBaseURL(configData, provider, req.BaseURL)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("patch base_url in %s: %w", req.ConfigPath, err)
 	}
@@ -178,6 +185,33 @@ func PatchModelProvider(content []byte, provider string) ([]byte, bool, error) {
 	}
 
 	return nil, false, fmt.Errorf("model_provider not found")
+}
+
+func findProviderByBaseURL(content []byte, baseURL string) (string, error) {
+	lines := strings.Split(normalizeNewlines(string(content)), "\n")
+	provider := ""
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			provider = ""
+			prefix := "[model_providers."
+			if strings.HasPrefix(line, prefix) {
+				provider = strings.TrimSuffix(strings.TrimPrefix(line, prefix), "]")
+			}
+			continue
+		}
+
+		if provider == "" {
+			continue
+		}
+
+		matches := baseURLValuePattern.FindStringSubmatch(line)
+		if len(matches) == 2 && matches[1] == baseURL {
+			return provider, nil
+		}
+	}
+
+	return "", fmt.Errorf("provider for base_url %q not found", baseURL)
 }
 
 func writeChangedFile(path string, before []byte, after []byte, mode os.FileMode) (string, error) {

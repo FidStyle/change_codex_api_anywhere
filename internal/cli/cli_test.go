@@ -166,10 +166,9 @@ base_url = "https://keep.example.com/v1"`
 		t.Fatalf("reload ccaa config: %v", err)
 	}
 	cfg.UpsertProfile(config.Profile{
-		Name:     "vendor",
-		Provider: "vendor",
-		BaseURL:  "https://new.example.com/v1",
-		APIKey:   "new-key",
+		Name:    "vendor",
+		BaseURL: "https://keep.example.com/v1",
+		APIKey:  "new-key",
 	})
 	if err := config.Save(ccaaConfigPath, cfg); err != nil {
 		t.Fatalf("save vendor profile: %v", err)
@@ -186,7 +185,7 @@ base_url = "https://keep.example.com/v1"`
 	if err != nil {
 		t.Fatalf("read restored codex config: %v", err)
 	}
-	wantConfig = strings.Replace(codexConfig, `base_url = "https://keep.example.com/v1"`, `base_url = "https://new.example.com/v1"`, 1)
+	wantConfig = codexConfig
 	if string(updatedConfig) != wantConfig {
 		t.Fatalf("normal profile did not restore provider/base_url:\n%s", string(updatedConfig))
 	}
