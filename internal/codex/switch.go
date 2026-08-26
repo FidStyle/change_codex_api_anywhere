@@ -39,6 +39,8 @@ var (
 	baseURLValuePattern  = regexp.MustCompile(`^base_url\s*=\s*"([^"]*)"$`)
 )
 
+const defaultProvider = "rightcode"
+
 func Apply(req SwitchRequest) (*SwitchResult, error) {
 	configData, configMode, err := readFileWithMode(req.ConfigPath)
 	if err != nil {
@@ -52,10 +54,7 @@ func Apply(req SwitchRequest) (*SwitchResult, error) {
 
 	provider := strings.TrimSpace(req.Provider)
 	if provider == "" {
-		provider, err = CurrentProvider(configData)
-		if err != nil {
-			return nil, fmt.Errorf("detect model_provider from %s: %w", req.ConfigPath, err)
-		}
+		provider = defaultProvider
 	}
 
 	nextConfig, baseURLChanged, err := PatchBaseURL(configData, provider, req.BaseURL)

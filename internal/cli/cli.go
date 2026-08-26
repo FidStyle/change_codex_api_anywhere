@@ -13,7 +13,7 @@ import (
 	"ccaa/internal/install"
 )
 
-const defaultOpenAIAuthSourcePath = "/home/yaoyixuan/Nutstore Files/我的坚果云/ccaa/openai.auth.json"
+const defaultOpenAIAuthSourcePath = "/mnt/c/Users/joytion/Nutstore/1/我的坚果云/ccaa/openai.auth.json"
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	root := flag.NewFlagSet("ccaa", flag.ContinueOnError)

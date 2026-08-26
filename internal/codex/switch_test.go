@@ -153,3 +153,53 @@ base_url = "https://old.example.com/v1"
 		t.Fatalf("auth backup missing: %v", err)
 	}
 }
+
+func TestApplyDefaultsToRightcodeWhenProviderIsMissing(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.toml")
+	authPath := filepath.Join(tempDir, "auth.json")
+
+	configContent := `model_provider = "openai"
+
+[model_providers.rightcode]
+base_url = "https://old.example.com/v1"
+`
+	authContent := `{
+  "OPENAI_API_KEY": "old-key"
+}`
+
+	if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
+		t.Fatalf("write config fixture: %v", err)
+	}
+	if err := os.WriteFile(authPath, []byte(authContent), 0o600); err != nil {
+		t.Fatalf("write auth fixture: %v", err)
+	}
+
+	result, err := Apply(SwitchRequest{
+		ConfigPath: configPath,
+		AuthPath:   authPath,
+		BaseURL:    "https://new.example.com/v1",
+		APIKey:     "new-key",
+	})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if result.Provider != "rightcode" {
+		t.Fatalf("Provider = %q, want rightcode", result.Provider)
+	}
+
+	updatedConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read updated config: %v", err)
+	}
+	wantConfig := `model_provider = "rightcode"
+
+[model_providers.rightcode]
+base_url = "https://new.example.com/v1"
+`
+	if string(updatedConfig) != wantConfig {
+		t.Fatalf("unexpected updated config:\n%s", string(updatedConfig))
+	}
+}
