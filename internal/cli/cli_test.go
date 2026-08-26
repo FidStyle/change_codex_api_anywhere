@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -96,5 +97,67 @@ func TestRunAddSupportsShortFlags(t *testing.T) {
 
 	if profile.APIKey != "sk-test" {
 		t.Fatalf("APIKey = %q, want expected value", profile.APIKey)
+	}
+}
+
+func TestRunOpenAISwitchesConfiguredCodexFiles(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	ccaaConfigPath := filepath.Join(tempDir, "ccaa.toml")
+	codexConfigPath := filepath.Join(tempDir, "codex.toml")
+	codexAuthPath := filepath.Join(tempDir, "auth.json")
+	authSourcePath := filepath.Join(tempDir, "openai.auth.json")
+
+	cfg := config.New()
+	cfg.Codex.ConfigPath = codexConfigPath
+	cfg.Codex.AuthPath = codexAuthPath
+	if err := config.Save(ccaaConfigPath, cfg); err != nil {
+		t.Fatalf("save ccaa config: %v", err)
+	}
+
+	codexConfig := `model_provider = "vendor"
+
+[model_providers.vendor]
+base_url = "https://keep.example.com/v1"`
+	if err := os.WriteFile(codexConfigPath, []byte(codexConfig), 0o600); err != nil {
+		t.Fatalf("write codex config: %v", err)
+	}
+	if err := os.WriteFile(codexAuthPath, []byte(`{"OPENAI_API_KEY":"old"}`), 0o600); err != nil {
+		t.Fatalf("write codex auth: %v", err)
+	}
+	sourceAuth := `{"auth_mode":"chatgpt","OPENAI_API_KEY":null,"tokens":{"access_token":"fixture"}}`
+	if err := os.WriteFile(authSourcePath, []byte(sourceAuth), 0o600); err != nil {
+		t.Fatalf("write OpenAI auth source: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := Run([]string{
+		"-c", ccaaConfigPath,
+		"openai",
+		"-a", authSourcePath,
+	}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Run() exitCode = %d; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "switched to OpenAI") {
+		t.Fatalf("OpenAI switch output missing: %s", stdout.String())
+	}
+
+	updatedConfig, err := os.ReadFile(codexConfigPath)
+	if err != nil {
+		t.Fatalf("read updated codex config: %v", err)
+	}
+	wantConfig := strings.Replace(codexConfig, `model_provider = "vendor"`, `model_provider = "openai"`, 1)
+	if string(updatedConfig) != wantConfig {
+		t.Fatalf("OpenAI switch changed more than model_provider:\n%s", string(updatedConfig))
+	}
+
+	updatedAuth, err := os.ReadFile(codexAuthPath)
+	if err != nil {
+		t.Fatalf("read updated codex auth: %v", err)
+	}
+	if string(updatedAuth) != sourceAuth {
+		t.Fatalf("OpenAI auth was not copied: %s", string(updatedAuth))
 	}
 }

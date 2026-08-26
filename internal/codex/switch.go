@@ -18,6 +18,12 @@ type SwitchRequest struct {
 	APIKey     string
 }
 
+type OpenAIRequest struct {
+	ConfigPath     string
+	AuthPath       string
+	AuthSourcePath string
+}
+
 type SwitchResult struct {
 	Provider      string
 	ConfigChanged bool
@@ -61,25 +67,60 @@ func Apply(req SwitchRequest) (*SwitchResult, error) {
 	result := &SwitchResult{Provider: provider, ConfigChanged: configChanged, AuthChanged: authChanged}
 
 	if configChanged {
-		backupPath, err := backupFile(req.ConfigPath, configData)
+		result.ConfigBackup, err = writeChangedFile(req.ConfigPath, configData, nextConfig, configMode)
 		if err != nil {
-			return nil, err
-		}
-
-		result.ConfigBackup = backupPath
-		if err := writeFileAtomic(req.ConfigPath, nextConfig, configMode); err != nil {
 			return nil, err
 		}
 	}
 
 	if authChanged {
-		backupPath, err := backupFile(req.AuthPath, authData)
+		result.AuthBackup, err = writeChangedFile(req.AuthPath, authData, nextAuth, authMode)
 		if err != nil {
 			return nil, err
 		}
+	}
 
-		result.AuthBackup = backupPath
-		if err := writeFileAtomic(req.AuthPath, nextAuth, authMode); err != nil {
+	return result, nil
+}
+
+func ApplyOpenAI(req OpenAIRequest) (*SwitchResult, error) {
+	configData, configMode, err := readFileWithMode(req.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+
+	authData, authMode, err := readFileWithMode(req.AuthPath)
+	if err != nil {
+		return nil, err
+	}
+
+	sourceAuthData, _, err := readFileWithMode(req.AuthSourcePath)
+	if err != nil {
+		return nil, err
+	}
+
+	if !json.Valid(bytes.TrimSpace(sourceAuthData)) {
+		return nil, fmt.Errorf("validate auth source %s: invalid JSON", req.AuthSourcePath)
+	}
+
+	nextConfig, configChanged, err := PatchModelProvider(configData, "openai")
+	if err != nil {
+		return nil, fmt.Errorf("patch model_provider in %s: %w", req.ConfigPath, err)
+	}
+
+	authChanged := !bytes.Equal(authData, sourceAuthData)
+	result := &SwitchResult{Provider: "openai", ConfigChanged: configChanged, AuthChanged: authChanged}
+
+	if configChanged {
+		result.ConfigBackup, err = writeChangedFile(req.ConfigPath, configData, nextConfig, configMode)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if authChanged {
+		result.AuthBackup, err = writeChangedFile(req.AuthPath, authData, sourceAuthData, authMode)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -97,6 +138,49 @@ func CurrentProvider(content []byte) (string, error) {
 	}
 
 	return "", fmt.Errorf("model_provider not found")
+}
+
+func PatchModelProvider(content []byte, provider string) ([]byte, bool, error) {
+	if strings.TrimSpace(provider) == "" {
+		return nil, false, fmt.Errorf("provider cannot be empty")
+	}
+
+	quotedProvider, err := json.Marshal(provider)
+	if err != nil {
+		return nil, false, fmt.Errorf("encode provider: %w", err)
+	}
+
+	newline := detectNewline(content)
+	lines := strings.Split(normalizeNewlines(string(content)), "\n")
+	for i, rawLine := range lines {
+		if len(modelProviderPattern.FindStringSubmatch(strings.TrimSpace(rawLine))) != 2 {
+			continue
+		}
+
+		indent := rawLine[:len(rawLine)-len(strings.TrimLeft(rawLine, " \t"))]
+		replacement := indent + "model_provider = " + string(quotedProvider)
+		if rawLine == replacement {
+			return content, false, nil
+		}
+
+		lines[i] = replacement
+		return []byte(strings.Join(lines, newline)), true, nil
+	}
+
+	return nil, false, fmt.Errorf("model_provider not found")
+}
+
+func writeChangedFile(path string, before []byte, after []byte, mode os.FileMode) (string, error) {
+	backupPath, err := backupFile(path, before)
+	if err != nil {
+		return "", err
+	}
+
+	if err := writeFileAtomic(path, after, mode); err != nil {
+		return "", err
+	}
+
+	return backupPath, nil
 }
 
 func PatchBaseURL(content []byte, provider string, baseURL string) ([]byte, bool, error) {
