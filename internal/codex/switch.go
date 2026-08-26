@@ -35,7 +35,6 @@ type SwitchResult struct {
 
 var (
 	modelProviderPattern = regexp.MustCompile(`^model_provider\s*=\s*"([^"]+)"\s*$`)
-	openAIKeyPattern     = regexp.MustCompile(`("OPENAI_API_KEY"\s*:\s*)("(?:\\.|[^"\\])*"|null)`)
 	baseURLLinePattern   = regexp.MustCompile(`^(\s*)base_url\s*=`)
 	baseURLValuePattern  = regexp.MustCompile(`^base_url\s*=\s*"([^"]*)"$`)
 )
@@ -292,23 +291,13 @@ func PatchOpenAIAPIKey(content []byte, apiKey string) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("encode api_key: %w", err)
 	}
 
-	if openAIKeyPattern.Match(content) {
-		next := openAIKeyPattern.ReplaceAll(content, []byte(`${1}`+string(quotedAPIKey)))
-		if bytes.Equal(next, content) {
-			return content, false, nil
-		}
-
-		return next, true, nil
+	newline := detectNewline(content)
+	next := []byte("{" + newline + `  "OPENAI_API_KEY": ` + string(quotedAPIKey) + newline + "}")
+	if bytes.Equal(next, content) {
+		return content, false, nil
 	}
 
-	trimmed := bytes.TrimSpace(content)
-	if bytes.Equal(trimmed, []byte("{}")) {
-		newline := detectNewline(content)
-		next := []byte("{" + newline + `  "OPENAI_API_KEY": ` + string(quotedAPIKey) + newline + "}")
-		return next, true, nil
-	}
-
-	return nil, false, fmt.Errorf("OPENAI_API_KEY not found")
+	return next, true, nil
 }
 
 func readFileWithMode(path string) ([]byte, os.FileMode, error) {

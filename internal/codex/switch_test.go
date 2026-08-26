@@ -57,13 +57,15 @@ base_url = "https://other.example.com/v1"`) {
 	}
 }
 
-func TestPatchOpenAIAPIKeyReplacesOnlyTargetKey(t *testing.T) {
+func TestPatchOpenAIAPIKeyKeepsOnlyTargetKey(t *testing.T) {
 	t.Parallel()
 
 	content := []byte(`{
-  "micu_OPENAI_API_KEY": "keep",
+  "auth_mode": "chatgpt",
   "OPENAI_API_KEY": null,
-  "-OPENAI_API_KEY": "keep-too"
+  "tokens": {
+    "access_token": "remove-me"
+  }
 }`)
 
 	next, changed, err := PatchOpenAIAPIKey(content, "new-key")
@@ -75,17 +77,11 @@ func TestPatchOpenAIAPIKeyReplacesOnlyTargetKey(t *testing.T) {
 		t.Fatalf("PatchOpenAIAPIKey() changed = false, want true")
 	}
 
-	got := string(next)
-	if !strings.Contains(got, `"OPENAI_API_KEY": "new-key"`) {
-		t.Fatalf("patched content missing updated OPENAI_API_KEY:\n%s", got)
-	}
-
-	if !strings.Contains(got, `"micu_OPENAI_API_KEY": "keep"`) {
-		t.Fatalf("patched content should keep micu_OPENAI_API_KEY:\n%s", got)
-	}
-
-	if !strings.Contains(got, `"-OPENAI_API_KEY": "keep-too"`) {
-		t.Fatalf("patched content should keep -OPENAI_API_KEY:\n%s", got)
+	want := `{
+  "OPENAI_API_KEY": "new-key"
+}`
+	if string(next) != want {
+		t.Fatalf("patched content should keep only OPENAI_API_KEY:\n%s", string(next))
 	}
 }
 

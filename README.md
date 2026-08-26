@@ -51,7 +51,7 @@ api_key = "sk-xxx"
 
 ## Notes
 
-- `use` switches to the profile's `provider` when set, updates that provider's `base_url`, and updates `OPENAI_API_KEY`
+- `use` switches to the profile's `provider` when set, updates that provider's `base_url`, and rewrites `auth.json` to only contain `OPENAI_API_KEY`
 - `openai` changes only `model_provider` to `openai` and copies the provided auth JSON without changing any `base_url`
 - `openai --auth-source PATH` overrides the default OpenAI auth JSON source path
 - `install` copies the current binary into a PATH location appropriate for the current OS

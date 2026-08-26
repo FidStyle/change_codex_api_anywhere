@@ -194,7 +194,9 @@ base_url = "https://keep.example.com/v1"`
 	if err != nil {
 		t.Fatalf("read restored codex auth: %v", err)
 	}
-	wantAuth := `{"auth_mode":"chatgpt","OPENAI_API_KEY":"new-key","tokens":{"access_token":"fixture"}}`
+	wantAuth := `{
+  "OPENAI_API_KEY": "new-key"
+}`
 	if string(updatedAuth) != wantAuth {
 		t.Fatalf("normal profile did not update null API key while preserving auth:\n%s", string(updatedAuth))
 	}
