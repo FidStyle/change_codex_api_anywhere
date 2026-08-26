@@ -358,6 +358,7 @@ func runUse(args []string, configPath string, stdout io.Writer, stderr io.Writer
 	result, err := codex.Apply(codex.SwitchRequest{
 		ConfigPath: codexConfigPath,
 		AuthPath:   codexAuthPath,
+		Provider:   strings.TrimSpace(profile.Provider),
 		BaseURL:    profile.BaseURL,
 		APIKey:     profile.APIKey,
 	})

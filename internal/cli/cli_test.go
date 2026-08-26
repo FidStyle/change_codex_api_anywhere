@@ -160,4 +160,43 @@ base_url = "https://keep.example.com/v1"`
 	if string(updatedAuth) != sourceAuth {
 		t.Fatalf("OpenAI auth was not copied: %s", string(updatedAuth))
 	}
+
+	cfg, err = config.Load(ccaaConfigPath)
+	if err != nil {
+		t.Fatalf("reload ccaa config: %v", err)
+	}
+	cfg.UpsertProfile(config.Profile{
+		Name:     "vendor",
+		Provider: "vendor",
+		BaseURL:  "https://new.example.com/v1",
+		APIKey:   "new-key",
+	})
+	if err := config.Save(ccaaConfigPath, cfg); err != nil {
+		t.Fatalf("save vendor profile: %v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exitCode = Run([]string{"-c", ccaaConfigPath, "use", "vendor"}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Run() use exitCode = %d; stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
+	}
+
+	updatedConfig, err = os.ReadFile(codexConfigPath)
+	if err != nil {
+		t.Fatalf("read restored codex config: %v", err)
+	}
+	wantConfig = strings.Replace(codexConfig, `base_url = "https://keep.example.com/v1"`, `base_url = "https://new.example.com/v1"`, 1)
+	if string(updatedConfig) != wantConfig {
+		t.Fatalf("normal profile did not restore provider/base_url:\n%s", string(updatedConfig))
+	}
+
+	updatedAuth, err = os.ReadFile(codexAuthPath)
+	if err != nil {
+		t.Fatalf("read restored codex auth: %v", err)
+	}
+	wantAuth := `{"auth_mode":"chatgpt","OPENAI_API_KEY":"new-key","tokens":{"access_token":"fixture"}}`
+	if string(updatedAuth) != wantAuth {
+		t.Fatalf("normal profile did not update null API key while preserving auth:\n%s", string(updatedAuth))
+	}
 }

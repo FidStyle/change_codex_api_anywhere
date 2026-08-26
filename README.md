@@ -25,6 +25,7 @@ go build ./...
 ./ccaa add -n main -p vendor-a -u https://example.com/v1 -k sk-xxx -d "monthly route"
 ./ccaa list
 ./ccaa use main
+./ccaa openai
 ./ccaa current
 ./ccaa help add
 ./ccaa install
@@ -50,7 +51,8 @@ api_key = "sk-xxx"
 
 ## Notes
 
-- `use` only updates the `base_url` under the active `model_provider` section inside Codex's `config.toml`
-- `use` only updates `OPENAI_API_KEY` inside Codex's `auth.json`
+- `use` switches to the profile's `provider` when set, updates that provider's `base_url`, and updates `OPENAI_API_KEY`
+- `openai` changes only `model_provider` to `openai` and copies the provided auth JSON without changing any `base_url`
+- `openai --auth-source PATH` overrides the default OpenAI auth JSON source path
 - `install` copies the current binary into a PATH location appropriate for the current OS
 - before writing, `ccaa` creates timestamped backups next to both Codex files

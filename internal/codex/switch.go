@@ -14,6 +14,7 @@ import (
 type SwitchRequest struct {
 	ConfigPath string
 	AuthPath   string
+	Provider   string
 	BaseURL    string
 	APIKey     string
 }
@@ -34,7 +35,7 @@ type SwitchResult struct {
 
 var (
 	modelProviderPattern = regexp.MustCompile(`^model_provider\s*=\s*"([^"]+)"\s*$`)
-	openAIKeyPattern     = regexp.MustCompile(`("OPENAI_API_KEY"\s*:\s*)("(?:\\.|[^"\\])*")`)
+	openAIKeyPattern     = regexp.MustCompile(`("OPENAI_API_KEY"\s*:\s*)("(?:\\.|[^"\\])*"|null)`)
 	baseURLLinePattern   = regexp.MustCompile(`^(\s*)base_url\s*=`)
 )
 
@@ -49,15 +50,24 @@ func Apply(req SwitchRequest) (*SwitchResult, error) {
 		return nil, err
 	}
 
-	provider, err := CurrentProvider(configData)
-	if err != nil {
-		return nil, fmt.Errorf("detect model_provider from %s: %w", req.ConfigPath, err)
+	provider := strings.TrimSpace(req.Provider)
+	if provider == "" {
+		provider, err = CurrentProvider(configData)
+		if err != nil {
+			return nil, fmt.Errorf("detect model_provider from %s: %w", req.ConfigPath, err)
+		}
 	}
 
-	nextConfig, configChanged, err := PatchBaseURL(configData, provider, req.BaseURL)
+	nextConfig, baseURLChanged, err := PatchBaseURL(configData, provider, req.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("patch base_url in %s: %w", req.ConfigPath, err)
 	}
+
+	nextConfig, providerChanged, err := PatchModelProvider(nextConfig, provider)
+	if err != nil {
+		return nil, fmt.Errorf("patch model_provider in %s: %w", req.ConfigPath, err)
+	}
+	configChanged := baseURLChanged || providerChanged
 
 	nextAuth, authChanged, err := PatchOpenAIAPIKey(authData, req.APIKey)
 	if err != nil {

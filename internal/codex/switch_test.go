@@ -62,7 +62,7 @@ func TestPatchOpenAIAPIKeyReplacesOnlyTargetKey(t *testing.T) {
 
 	content := []byte(`{
   "micu_OPENAI_API_KEY": "keep",
-  "OPENAI_API_KEY": "old",
+  "OPENAI_API_KEY": null,
   "-OPENAI_API_KEY": "keep-too"
 }`)
 
