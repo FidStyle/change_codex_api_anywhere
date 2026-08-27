@@ -26,6 +26,26 @@ func TestRunShowsRootHelpWithDashH(t *testing.T) {
 	}
 }
 
+func TestDefaultOpenAIAuthSourcePathUsesMachineHome(t *testing.T) {
+	t.Parallel()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir() error = %v", err)
+	}
+
+	path := defaultOpenAIAuthSourcePath()
+	if !strings.HasSuffix(path, filepath.Join("Nutstore Files", "我的坚果云", "ccaa", "openai.auth.json")) {
+		t.Fatalf("default auth source path = %q, want Nutstore path", path)
+	}
+	if strings.HasPrefix(path, "/mnt/c/") {
+		t.Skip("WSL default is selected when the mounted Nutstore path exists")
+	}
+	if !strings.HasPrefix(path, home+string(os.PathSeparator)) {
+		t.Fatalf("default auth source path = %q, want under home %q", path, home)
+	}
+}
+
 func TestRunHelpAddShowsShortFlags(t *testing.T) {
 	t.Parallel()
 

@@ -53,6 +53,6 @@ api_key = "sk-xxx"
 
 - `use` switches to the profile's `provider` when set (otherwise `rightcode`), updates that provider's `base_url`, and rewrites `auth.json` to only contain `OPENAI_API_KEY`
 - `openai` changes only `model_provider` to `openai` and copies the provided auth JSON without changing any `base_url`
-- `openai` defaults to `/mnt/c/Users/joytion/Nutstore/1/我的坚果云/ccaa/openai.auth.json`; `--auth-source PATH` overrides it
+- `openai` chooses the auth source for the current machine: macOS uses `~/Nutstore Files/我的坚果云/ccaa`, WSL uses `/mnt/c/Users/joytion/Nutstore/1/我的坚果云/ccaa`, and other Linux hosts use `~/Nutstore Files/我的坚果云/ccaa`; `--auth-source PATH` overrides it
 - `install` copies the current binary into a PATH location appropriate for the current OS
 - before writing, `ccaa` creates timestamped backups next to both Codex files

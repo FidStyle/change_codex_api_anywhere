@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"ccaa/internal/codex"
 	"ccaa/internal/config"
 	"ccaa/internal/install"
 )
-
-const defaultOpenAIAuthSourcePath = "/mnt/c/Users/joytion/Nutstore/1/我的坚果云/ccaa/openai.auth.json"
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	root := flag.NewFlagSet("ccaa", flag.ContinueOnError)
@@ -390,8 +390,9 @@ func runOpenAI(args []string, configPath string, stdout io.Writer, stderr io.Wri
 		printOpenAIUsage(stdout)
 	}
 	var authSourcePath string
-	fs.StringVar(&authSourcePath, "auth-source", defaultOpenAIAuthSourcePath, "source auth.json path")
-	fs.StringVar(&authSourcePath, "a", defaultOpenAIAuthSourcePath, "source auth.json path")
+	defaultAuthSourcePath := defaultOpenAIAuthSourcePath()
+	fs.StringVar(&authSourcePath, "auth-source", defaultAuthSourcePath, "source auth.json path")
+	fs.StringVar(&authSourcePath, "a", defaultAuthSourcePath, "source auth.json path")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -505,6 +506,28 @@ func resolveCodexPaths(cfg *config.File) (string, string, error) {
 	}
 
 	return codexConfigPath, codexAuthPath, nil
+}
+
+func defaultOpenAIAuthSourcePath() string {
+	const relativePath = "Nutstore Files/我的坚果云/ccaa/openai.auth.json"
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "~"
+	}
+
+	if runtime.GOOS == "linux" {
+		if isWSL() {
+			return "/mnt/c/Users/joytion/Nutstore/1/我的坚果云/ccaa/openai.auth.json"
+		}
+	}
+
+	return filepath.Join(home, relativePath)
+}
+
+func isWSL() bool {
+	data, err := os.ReadFile("/proc/version")
+	return err == nil && strings.Contains(strings.ToLower(string(data)), "microsoft")
 }
 
 func loadOrCreateConfig(path string) (*config.File, error) {
