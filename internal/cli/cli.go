@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 
 	"ccaa/internal/codex"
@@ -152,8 +150,8 @@ func runAdd(args []string, configPath string, stdout io.Writer, stderr io.Writer
 	fs.StringVar(&name, "n", "", "profile name")
 	fs.StringVar(&baseURL, "base-url", "", "base URL for Codex")
 	fs.StringVar(&baseURL, "u", "", "base URL for Codex")
-	fs.StringVar(&apiKey, "api-key", "", "OPENAI_API_KEY value")
-	fs.StringVar(&apiKey, "k", "", "OPENAI_API_KEY value")
+	fs.StringVar(&apiKey, "api-key", "", "experimental_bearer_token value")
+	fs.StringVar(&apiKey, "k", "", "experimental_bearer_token value")
 	fs.StringVar(&provider, "provider", "", "provider label")
 	fs.StringVar(&provider, "p", "", "provider label")
 	fs.StringVar(&description, "description", "", "description")
@@ -292,6 +290,10 @@ func runCurrent(args []string, configPath string, stdout io.Writer, stderr io.Wr
 		return 0
 	}
 
+	if cfg.CurrentProfile == "openai" {
+		fmt.Fprintln(stdout, "openai")
+		return 0
+	}
 	profile, _ := cfg.FindProfile(cfg.CurrentProfile)
 	if profile == nil {
 		fmt.Fprintf(stderr, "current profile %q is missing from config\n", cfg.CurrentProfile)
@@ -332,6 +334,10 @@ func runUse(args []string, configPath string, stdout io.Writer, stderr io.Writer
 		return 2
 	}
 
+	if name == "openai" || name == "opneai" {
+		return runOpenAI(nil, configPath, stdout, stderr)
+	}
+
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -349,7 +355,7 @@ func runUse(args []string, configPath string, stdout io.Writer, stderr io.Writer
 		return 1
 	}
 
-	codexConfigPath, codexAuthPath, err := resolveCodexPaths(cfg)
+	codexConfigPath, err := config.ResolvePath(cfg.Codex.ConfigPath)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -357,8 +363,6 @@ func runUse(args []string, configPath string, stdout io.Writer, stderr io.Writer
 
 	result, err := codex.Apply(codex.SwitchRequest{
 		ConfigPath: codexConfigPath,
-		AuthPath:   codexAuthPath,
-		Provider:   strings.TrimSpace(profile.Provider),
 		BaseURL:    profile.BaseURL,
 		APIKey:     profile.APIKey,
 	})
@@ -377,9 +381,6 @@ func runUse(args []string, configPath string, stdout io.Writer, stderr io.Writer
 	if result.ConfigBackup != "" {
 		fmt.Fprintf(stdout, "config backup: %s\n", result.ConfigBackup)
 	}
-	if result.AuthBackup != "" {
-		fmt.Fprintf(stdout, "auth backup: %s\n", result.AuthBackup)
-	}
 	return 0
 }
 
@@ -389,10 +390,6 @@ func runOpenAI(args []string, configPath string, stdout io.Writer, stderr io.Wri
 	fs.Usage = func() {
 		printOpenAIUsage(stdout)
 	}
-	var authSourcePath string
-	defaultAuthSourcePath := defaultOpenAIAuthSourcePath()
-	fs.StringVar(&authSourcePath, "auth-source", defaultAuthSourcePath, "source auth.json path")
-	fs.StringVar(&authSourcePath, "a", defaultAuthSourcePath, "source auth.json path")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -417,34 +414,28 @@ func runOpenAI(args []string, configPath string, stdout io.Writer, stderr io.Wri
 		return 1
 	}
 
-	codexConfigPath, codexAuthPath, err := resolveCodexPaths(cfg)
+	codexConfigPath, err := config.ResolvePath(cfg.Codex.ConfigPath)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
 
-	resolvedAuthSourcePath, err := config.ResolvePath(authSourcePath)
-	if err != nil {
-		fmt.Fprintf(stderr, "resolve OpenAI auth source path: %v\n", err)
-		return 1
-	}
-
 	result, err := codex.ApplyOpenAI(codex.OpenAIRequest{
-		ConfigPath:     codexConfigPath,
-		AuthPath:       codexAuthPath,
-		AuthSourcePath: resolvedAuthSourcePath,
+		ConfigPath: codexConfigPath,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "switch to OpenAI: %v\n", err)
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "switched to OpenAI via provider section %s\n", result.Provider)
+	cfg.CurrentProfile = "openai"
+	if err := config.Save(configPath, cfg); err != nil {
+		fmt.Fprintf(stderr, "save config: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "switched to OpenAI: cleared overrides in provider section %s\n", result.Provider)
 	if result.ConfigBackup != "" {
 		fmt.Fprintf(stdout, "config backup: %s\n", result.ConfigBackup)
-	}
-	if result.AuthBackup != "" {
-		fmt.Fprintf(stdout, "auth backup: %s\n", result.AuthBackup)
 	}
 	return 0
 }
@@ -492,42 +483,6 @@ func chooseConfigPath(flagPath string) (string, error) {
 	}
 
 	return config.DefaultPath()
-}
-
-func resolveCodexPaths(cfg *config.File) (string, string, error) {
-	codexConfigPath, err := config.ResolvePath(cfg.Codex.ConfigPath)
-	if err != nil {
-		return "", "", fmt.Errorf("resolve codex config path: %w", err)
-	}
-
-	codexAuthPath, err := config.ResolvePath(cfg.Codex.AuthPath)
-	if err != nil {
-		return "", "", fmt.Errorf("resolve codex auth path: %w", err)
-	}
-
-	return codexConfigPath, codexAuthPath, nil
-}
-
-func defaultOpenAIAuthSourcePath() string {
-	const relativePath = "Nutstore Files/我的坚果云/ccaa/openai.auth.json"
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "~"
-	}
-
-	if runtime.GOOS == "linux" {
-		if isWSL() {
-			return "/mnt/c/Users/joytion/Nutstore/1/我的坚果云/ccaa/openai.auth.json"
-		}
-	}
-
-	return filepath.Join(home, relativePath)
-}
-
-func isWSL() bool {
-	data, err := os.ReadFile("/proc/version")
-	return err == nil && strings.Contains(strings.ToLower(string(data)), "microsoft")
 }
 
 func loadOrCreateConfig(path string) (*config.File, error) {
@@ -582,7 +537,7 @@ func runHelp(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func printRootUsage(w io.Writer) {
-	fmt.Fprintln(w, "ccaa manages Codex base_url and OPENAI_API_KEY profiles.")
+	fmt.Fprintln(w, "ccaa manages Codex base_url and experimental_bearer_token profiles.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  ccaa [-c /path/to/config.toml] <command> [options]")
@@ -597,8 +552,8 @@ func printRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  add        Add or replace a profile in the config file")
 	fmt.Fprintln(w, "  list       List profiles")
 	fmt.Fprintln(w, "  current    Show current profile")
-	fmt.Fprintln(w, "  use        Patch ~/.codex/config.toml and ~/.codex/auth.json")
-	fmt.Fprintln(w, "  openai     Switch to OpenAI without changing base_url")
+	fmt.Fprintln(w, "  use        Update URL/token in ~/.codex/config.toml (or use openai to clear them)")
+	fmt.Fprintln(w, "  openai     Remove base_url and experimental_bearer_token overrides")
 	fmt.Fprintln(w, "  install    Install the current binary into a callable location")
 	fmt.Fprintln(w, "  help       Show root help or help for one command")
 }
@@ -623,8 +578,8 @@ func printAddUsage(w io.Writer) {
 	fmt.Fprintln(w, "Options:")
 	fmt.Fprintln(w, "  -n, --name           Profile name")
 	fmt.Fprintln(w, "  -u, --base-url       Base URL to write into ~/.codex/config.toml")
-	fmt.Fprintln(w, "  -k, --api-key        OPENAI_API_KEY to write into ~/.codex/auth.json")
-	fmt.Fprintln(w, "  -p, --provider       Optional provider label")
+	fmt.Fprintln(w, "  -k, --api-key        experimental_bearer_token to write into Codex config")
+	fmt.Fprintln(w, "  -p, --provider       Optional display label (does not select a provider)")
 	fmt.Fprintln(w, "  -d, --description    Optional description")
 	fmt.Fprintln(w, "  -h, --help           Show help")
 }
@@ -662,13 +617,12 @@ func printUseUsage(w io.Writer) {
 }
 
 func printOpenAIUsage(w io.Writer) {
-	fmt.Fprintln(w, "Switch Codex to OpenAI without changing any base_url.")
+	fmt.Fprintln(w, "Remove URL/token overrides; leave auth.json and model_provider untouched.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Usage:")
 	fmt.Fprintln(w, "  ccaa [-c /path/to/config.toml] openai")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Options:")
-	fmt.Fprintln(w, "  -a, --auth-source   Source auth.json to copy")
 	fmt.Fprintln(w, "  -h, --help          Show help")
 }
 

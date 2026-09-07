@@ -1,20 +1,21 @@
 # ccaa
 
-`ccaa` is a small Go CLI that switches Codex between saved `base_url + OPENAI_API_KEY` profiles.
+`ccaa` is a small Go CLI that switches Codex between saved URL/token profiles.
 
 It stores its own state in one file:
 
 - `~/.ccaa/config.toml`
 
-It patches these Codex files directly:
+It patches only:
 
 - `~/.codex/config.toml`
-- `~/.codex/auth.json`
+
+It never reads or writes `auth.json`, and never changes `model_provider` or `model`.
 
 ## Build
 
 ```bash
-go build ./...
+go build -o ccaa .
 ./ccaa install
 ```
 
@@ -26,6 +27,7 @@ go build ./...
 ./ccaa list
 ./ccaa use main
 ./ccaa openai
+./ccaa use openai
 ./ccaa current
 ./ccaa help add
 ./ccaa install
@@ -39,7 +41,6 @@ current_profile = "main"
 
 [codex]
 config_path = "~/.codex/config.toml"
-auth_path = "~/.codex/auth.json"
 
 [[profiles]]
 name = "main"
@@ -51,8 +52,10 @@ api_key = "sk-xxx"
 
 ## Notes
 
-- `use` switches to the profile's `provider` when set (otherwise `rightcode`), updates that provider's `base_url`, and rewrites `auth.json` to only contain `OPENAI_API_KEY`
-- `openai` changes only `model_provider` to `openai` and copies the provided auth JSON without changing any `base_url`
-- `openai` chooses the auth source for the current machine: macOS uses `~/Nutstore Files/我的坚果云/ccaa`, WSL uses `/mnt/c/Users/joytion/Nutstore/1/我的坚果云/ccaa`, and other Linux hosts use `~/Nutstore Files/我的坚果云/ccaa`; `--auth-source PATH` overrides it
+- `use NAME` writes the profile's `base_url` and `api_key` into `base_url` and `experimental_bearer_token` in the currently selected `[model_providers.NAME]` section. Missing fields or sections are created. When `model_provider` is absent, the section is `model_providers.openai`.
+- The profile's `provider` is only a display label; it does not select the target section.
+- `openai` and `use openai` delete those two overrides from the current provider section. `use opneai` is also accepted. No saved OpenAI profile or auth source is required.
+- OpenAI switching clears overrides only; it does not repair an old custom provider or restore credentials overwritten by earlier versions. Prepare your desired provider and login separately if needed.
+- `--auth-source` and `codex.auth_path` are no longer used.
 - `install` copies the current binary into a PATH location appropriate for the current OS
-- before writing, `ccaa` creates timestamped backups next to both Codex files
+- Before a change, `ccaa` creates a uniquely named, owner-only backup beside the Codex config. Repeated identical switches do not create backups.

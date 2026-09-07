@@ -1,205 +1,127 @@
 package codex
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	toml "github.com/pelletier/go-toml/v2"
 )
 
-func TestPatchBaseURLUsesCurrentProviderSection(t *testing.T) {
-	t.Parallel()
-
-	content := []byte(`model_provider = "rightcode"
--model_provider = "aigocode"
-
-[model_providers.rightcode]
-name = "rightcode"
-base_url = "https://old.example.com/v1"
-___base_url = "https://keep-me.example.com/v1"
-
-[model_providers.aigocode]
-name = "aigocode"
-base_url = "https://other.example.com/v1"
-`)
-
-	provider, err := CurrentProvider(content)
-	if err != nil {
-		t.Fatalf("CurrentProvider() error = %v", err)
-	}
-
-	if provider != "rightcode" {
-		t.Fatalf("provider = %q, want rightcode", provider)
-	}
-
-	next, changed, err := PatchBaseURL(content, provider, "https://new.example.com/v1")
-	if err != nil {
-		t.Fatalf("PatchBaseURL() error = %v", err)
-	}
-
-	if !changed {
-		t.Fatalf("PatchBaseURL() changed = false, want true")
-	}
-
-	got := string(next)
-	if !strings.Contains(got, `base_url = "https://new.example.com/v1"`) {
-		t.Fatalf("patched content missing new base_url:\n%s", got)
-	}
-
-	if !strings.Contains(got, `___base_url = "https://keep-me.example.com/v1"`) {
-		t.Fatalf("patched content should keep ___base_url:\n%s", got)
-	}
-
-	if !strings.Contains(got, `[model_providers.aigocode]
-name = "aigocode"
-base_url = "https://other.example.com/v1"`) {
-		t.Fatalf("patched content should keep other provider section:\n%s", got)
+func TestPatchCredentials(t *testing.T) {
+	for _, fixture := range []string{
+		"",
+		"model = 'keep'\n",
+		"[model_providers]\n[model_providers.other]\nbase_url = 'keep'\n",
+		"model_provider = 'vendor' # keep\n[model_providers.vendor] # keep\nname = 'Vendor'\nbase_url = 'old' # URL\nexperimental_bearer_token = 'old' # token\n[other]\nx = 1\n",
+		"model_provider = 'vendor'\r\n[model_providers.vendor]\r\n# base_url = 'disabled'\r\nbase_url = 'old'\r\n",
+		"[model_providers.'openai']",
+		"[model_providers.openai]\n'base_url' = '''old\nurl'''\nexperimental_bearer_token = 'old'",
+		"prompt = '''\n[model_providers.openai]\nbase_url = 'not a setting'\n'''\n",
+	} {
+		t.Run(fixture, func(t *testing.T) {
+			url, token := "https://new.example/v1", "token\"\\\nvalue"
+			next, provider, err := patchCredentials([]byte(fixture), url, token, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got struct {
+				Providers map[string]struct {
+					URL   string `toml:"base_url"`
+					Token string `toml:"experimental_bearer_token"`
+				} `toml:"model_providers"`
+			}
+			if err := toml.Unmarshal(next, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Providers[provider].URL != url || got.Providers[provider].Token != token {
+				t.Fatalf("wrong credentials: %s", next)
+			}
+			again, _, err := patchCredentials(next, url, token, false)
+			if err != nil || !bytes.Equal(next, again) {
+				t.Fatalf("not idempotent: %v\n%s", err, again)
+			}
+			cleared, _, err := patchCredentials(next, "", "", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			again, _, err = patchCredentials(cleared, "", "", true)
+			if err != nil || !bytes.Equal(cleared, again) {
+				t.Fatalf("clear not idempotent: %v", err)
+			}
+			if strings.Contains(fixture, "\r\n") && bytes.Contains(bytes.ReplaceAll(next, []byte("\r\n"), nil), []byte("\n")) {
+				t.Fatal("mixed line endings")
+			}
+		})
 	}
 }
 
-func TestPatchOpenAIAPIKeyKeepsOnlyTargetKey(t *testing.T) {
-	t.Parallel()
-
-	content := []byte(`{
-  "auth_mode": "chatgpt",
-  "OPENAI_API_KEY": null,
-  "tokens": {
-    "access_token": "remove-me"
-  }
-}`)
-
-	next, changed, err := PatchOpenAIAPIKey(content, "new-key")
+func TestOnlyActiveProviderCredentialsChange(t *testing.T) {
+	before := "model_provider = 'vendor' # unchanged\nmodel = 'keep'\n[model_providers.vendor]\nbase_url = 'old' # URL\nexperimental_bearer_token = 'old'\nname = 'keep'\n[model_providers.other]\nbase_url = 'untouched'\nexperimental_bearer_token = 'untouched'\n"
+	next, _, err := patchCredentials([]byte(before), "new-url", "new-token", false)
 	if err != nil {
-		t.Fatalf("PatchOpenAIAPIKey() error = %v", err)
+		t.Fatal(err)
 	}
-
-	if !changed {
-		t.Fatalf("PatchOpenAIAPIKey() changed = false, want true")
-	}
-
-	want := `{
-  "OPENAI_API_KEY": "new-key"
-}`
+	want := strings.Replace(before, "base_url = 'old'", "base_url = 'new-url'", 1)
+	want = strings.Replace(want, "experimental_bearer_token = 'old'", "experimental_bearer_token = 'new-token'", 1)
 	if string(next) != want {
-		t.Fatalf("patched content should keep only OPENAI_API_KEY:\n%s", string(next))
+		t.Fatalf("unexpected patch:\n%s", next)
+	}
+	cleared, _, err := patchCredentials(next, "", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = strings.Replace(want, "base_url = 'new-url' # URL\n", "", 1)
+	want = strings.Replace(want, "experimental_bearer_token = 'new-token'\n", "", 1)
+	if string(cleared) != want {
+		t.Fatalf("unexpected clear:\n%s", cleared)
 	}
 }
 
-func TestApplyUpdatesFilesAndCreatesBackups(t *testing.T) {
-	t.Parallel()
-
-	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, "config.toml")
-	authPath := filepath.Join(tempDir, "auth.json")
-
-	configContent := `model_provider = "rightcode"
-
-[model_providers.rightcode]
-base_url = "https://old.example.com/v1"
-`
-	authContent := `{
-  "OPENAI_API_KEY": "old-key"
-}`
-
-	if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
-		t.Fatalf("write config fixture: %v", err)
+func TestApplyBackupsAndNoAuthDependency(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	before := []byte("model_provider = 'openai'\n")
+	if err := os.WriteFile(path, before, 0o600); err != nil {
+		t.Fatal(err)
 	}
-
-	if err := os.WriteFile(authPath, []byte(authContent), 0o600); err != nil {
-		t.Fatalf("write auth fixture: %v", err)
-	}
-
-	result, err := Apply(SwitchRequest{
-		ConfigPath: configPath,
-		AuthPath:   authPath,
-		BaseURL:    "https://new.example.com/v1",
-		APIKey:     "new-key",
-	})
+	result, err := Apply(SwitchRequest{ConfigPath: path, BaseURL: "https://example/v1", APIKey: "secret"})
 	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
+		t.Fatal(err)
 	}
-
-	if result.Provider != "rightcode" {
-		t.Fatalf("Provider = %q, want rightcode", result.Provider)
+	backup, err := os.ReadFile(result.ConfigBackup)
+	if err != nil || !bytes.Equal(backup, before) {
+		t.Fatalf("bad backup: %v", err)
 	}
-
-	if result.ConfigBackup == "" || result.AuthBackup == "" {
-		t.Fatalf("expected backup paths, got %#v", result)
+	again, err := Apply(SwitchRequest{ConfigPath: path, BaseURL: "https://example/v1", APIKey: "secret"})
+	if err != nil || again.ConfigChanged || again.ConfigBackup != "" {
+		t.Fatalf("repeat apply: %#v %v", again, err)
 	}
-
-	configBytes, err := os.ReadFile(configPath)
+	cleared, err := ApplyOpenAI(OpenAIRequest{ConfigPath: path})
 	if err != nil {
-		t.Fatalf("read updated config: %v", err)
+		t.Fatal(err)
 	}
-
-	authBytes, err := os.ReadFile(authPath)
-	if err != nil {
-		t.Fatalf("read updated auth: %v", err)
+	if cleared.ConfigBackup == result.ConfigBackup {
+		t.Fatal("backup overwritten")
 	}
-
-	if !strings.Contains(string(configBytes), `base_url = "https://new.example.com/v1"`) {
-		t.Fatalf("updated config missing new base_url:\n%s", string(configBytes))
-	}
-
-	if !strings.Contains(string(authBytes), `"OPENAI_API_KEY": "new-key"`) {
-		t.Fatalf("updated auth missing new key:\n%s", string(authBytes))
-	}
-
-	if _, err := os.Stat(result.ConfigBackup); err != nil {
-		t.Fatalf("config backup missing: %v", err)
-	}
-
-	if _, err := os.Stat(result.AuthBackup); err != nil {
-		t.Fatalf("auth backup missing: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "auth.json")); !os.IsNotExist(err) {
+		t.Fatal("created auth.json")
 	}
 }
 
-func TestApplyDefaultsToRightcodeWhenProviderIsMissing(t *testing.T) {
-	t.Parallel()
-
-	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, "config.toml")
-	authPath := filepath.Join(tempDir, "auth.json")
-
-	configContent := `model_provider = "openai"
-
-[model_providers.rightcode]
-base_url = "https://old.example.com/v1"
-`
-	authContent := `{
-  "OPENAI_API_KEY": "old-key"
-}`
-
-	if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
-		t.Fatalf("write config fixture: %v", err)
+func TestInvalidConfigIsNotWritten(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	before := []byte("broken = [")
+	if err := os.WriteFile(path, before, 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if err := os.WriteFile(authPath, []byte(authContent), 0o600); err != nil {
-		t.Fatalf("write auth fixture: %v", err)
+	if _, err := Apply(SwitchRequest{ConfigPath: path, BaseURL: "url", APIKey: "token"}); err == nil {
+		t.Fatal("expected error")
 	}
-
-	result, err := Apply(SwitchRequest{
-		ConfigPath: configPath,
-		AuthPath:   authPath,
-		BaseURL:    "https://new.example.com/v1",
-		APIKey:     "new-key",
-	})
-	if err != nil {
-		t.Fatalf("Apply() error = %v", err)
-	}
-	if result.Provider != "rightcode" {
-		t.Fatalf("Provider = %q, want rightcode", result.Provider)
-	}
-
-	updatedConfig, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("read updated config: %v", err)
-	}
-	wantConfig := `model_provider = "rightcode"
-
-[model_providers.rightcode]
-base_url = "https://new.example.com/v1"
-`
-	if string(updatedConfig) != wantConfig {
-		t.Fatalf("unexpected updated config:\n%s", string(updatedConfig))
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("invalid config modified")
 	}
 }

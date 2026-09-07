@@ -13,7 +13,6 @@ import (
 const (
 	ConfigRelativePath      = ".ccaa/config.toml"
 	DefaultCodexConfigPath  = "~/.codex/config.toml"
-	DefaultCodexAuthPath    = "~/.codex/auth.json"
 	defaultConfigFileMode   = 0o600
 	defaultConfigFolderMode = 0o700
 )
@@ -27,7 +26,6 @@ type File struct {
 
 type CodexConfig struct {
 	ConfigPath string `toml:"config_path"`
-	AuthPath   string `toml:"auth_path"`
 }
 
 type Profile struct {
@@ -73,7 +71,6 @@ func New() *File {
 		Version: 1,
 		Codex: CodexConfig{
 			ConfigPath: DefaultCodexConfigPath,
-			AuthPath:   DefaultCodexAuthPath,
 		},
 		Profiles: []Profile{},
 	}
@@ -135,10 +132,6 @@ func (f *File) Validate() error {
 		return errors.New("codex.config_path cannot be empty")
 	}
 
-	if strings.TrimSpace(f.Codex.AuthPath) == "" {
-		return errors.New("codex.auth_path cannot be empty")
-	}
-
 	seen := make(map[string]struct{}, len(f.Profiles))
 	for _, profile := range f.Profiles {
 		if strings.TrimSpace(profile.Name) == "" {
@@ -160,7 +153,7 @@ func (f *File) Validate() error {
 		seen[profile.Name] = struct{}{}
 	}
 
-	if f.CurrentProfile != "" {
+	if f.CurrentProfile != "" && f.CurrentProfile != "openai" {
 		if _, ok := seen[f.CurrentProfile]; !ok {
 			return fmt.Errorf("current_profile %q does not exist", f.CurrentProfile)
 		}
@@ -197,9 +190,6 @@ func (f *File) applyDefaults() {
 		f.Codex.ConfigPath = DefaultCodexConfigPath
 	}
 
-	if strings.TrimSpace(f.Codex.AuthPath) == "" {
-		f.Codex.AuthPath = DefaultCodexAuthPath
-	}
 }
 
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
