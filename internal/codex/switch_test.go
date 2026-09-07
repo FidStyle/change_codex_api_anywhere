@@ -59,7 +59,7 @@ func TestPatchCredentials(t *testing.T) {
 }
 
 func TestOnlyActiveProviderCredentialsChange(t *testing.T) {
-	before := "model_provider = 'vendor' # unchanged\nmodel = 'keep'\n[model_providers.vendor]\nbase_url = 'old' # URL\nexperimental_bearer_token = 'old'\nname = 'keep'\n[model_providers.other]\nbase_url = 'untouched'\nexperimental_bearer_token = 'untouched'\n"
+	before := "model_provider = 'vendor' # unchanged\nmodel = 'keep'\n[model_providers.rightcode]\nbase_url = 'old' # URL\nexperimental_bearer_token = 'old'\nname = 'keep'\n[model_providers.other]\nbase_url = 'untouched'\nexperimental_bearer_token = 'untouched'\n"
 	next, _, err := patchCredentials([]byte(before), "new-url", "new-token", false)
 	if err != nil {
 		t.Fatal(err)

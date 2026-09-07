@@ -52,9 +52,9 @@ api_key = "sk-xxx"
 
 ## Notes
 
-- `use NAME` writes the profile's `base_url` and `api_key` into `base_url` and `experimental_bearer_token` in the currently selected `[model_providers.NAME]` section. Missing fields or sections are created. When `model_provider` is absent, the section is `model_providers.openai`.
-- The profile's `provider` is only a display label; it does not select the target section.
-- `openai` and `use openai` delete those two overrides from the current provider section. `use opneai` is also accepted. No saved OpenAI profile or auth source is required.
+- `use NAME` writes the profile's `base_url` and `api_key` into `base_url` and `experimental_bearer_token` in the fixed `[model_providers.rightcode]` section. Missing fields or the section are created.
+- The profile's `provider` is only a display label and is ignored for switching.
+- `openai` and `use openai` delete those two overrides from `[model_providers.rightcode]`. `use opneai` is also accepted. No saved OpenAI profile or auth source is required.
 - OpenAI switching clears overrides only; it does not repair an old custom provider or restore credentials overwritten by earlier versions. Prepare your desired provider and login separately if needed.
 - `--auth-source` and `codex.auth_path` are no longer used.
 - `install` copies the current binary into a PATH location appropriate for the current OS

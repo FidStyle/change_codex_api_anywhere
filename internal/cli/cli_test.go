@@ -30,7 +30,7 @@ func TestSwitchRoundTrip(t *testing.T) {
 			if err := os.WriteFile(authPath, auth, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(codexPath, []byte("model_provider = 'vendor' # keep\n[model_providers.vendor]\nname = 'keep'\n"), 0o600); err != nil {
+			if err := os.WriteFile(codexPath, []byte("model_provider = 'vendor' # keep\n[model_providers.rightcode]\nname = 'keep'\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			cfg := config.New()

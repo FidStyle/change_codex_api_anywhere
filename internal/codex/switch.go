@@ -75,16 +75,9 @@ func apply(path, baseURL, token string, clear bool) (*SwitchResult, error) {
 
 // TOML node ranges preserve unrelated settings, comments and multiline strings.
 func patchCredentials(content []byte, baseURL, token string, clear bool) ([]byte, string, error) {
-	var cfg struct {
-		Provider string `toml:"model_provider"`
-	}
-	if err := toml.Unmarshal(content, &cfg); err != nil {
-		return nil, "", err
-	}
-	provider := cfg.Provider
-	if provider == "" {
-		provider = "openai"
-	}
+	// rightcode is the fixed third-party provider section. model_provider is
+	// intentionally left untouched; OpenAI mode only clears this section.
+	provider := "rightcode"
 	type edit struct {
 		start, end int
 		text       string
