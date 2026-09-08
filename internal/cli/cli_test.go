@@ -54,7 +54,7 @@ func TestSwitchRoundTrip(t *testing.T) {
 			for i := 0; i < 2; i++ {
 				run("use", "main")
 				data, err := os.ReadFile(codexPath)
-				if err != nil || !strings.Contains(string(data), "experimental_bearer_token = 'test-token'") || !strings.Contains(string(data), "model_provider = 'vendor' # keep") {
+				if err != nil || !strings.Contains(string(data), "experimental_bearer_token = 'test-token'") || !strings.Contains(string(data), `model_provider = "rightcode" # keep`) {
 					t.Fatalf("bad switch: %v\n%s", err, data)
 				}
 				run(openAIArgs...)

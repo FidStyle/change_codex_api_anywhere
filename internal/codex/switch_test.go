@@ -28,6 +28,7 @@ func TestPatchCredentials(t *testing.T) {
 				t.Fatal(err)
 			}
 			var got struct {
+				Provider  string `toml:"model_provider"`
 				Providers map[string]struct {
 					URL   string `toml:"base_url"`
 					Token string `toml:"experimental_bearer_token"`
@@ -36,7 +37,7 @@ func TestPatchCredentials(t *testing.T) {
 			if err := toml.Unmarshal(next, &got); err != nil {
 				t.Fatal(err)
 			}
-			if got.Providers[provider].URL != url || got.Providers[provider].Token != token {
+			if got.Provider != provider || got.Providers[provider].URL != url || got.Providers[provider].Token != token {
 				t.Fatalf("wrong credentials: %s", next)
 			}
 			again, _, err := patchCredentials(next, url, token, false)
@@ -58,13 +59,14 @@ func TestPatchCredentials(t *testing.T) {
 	}
 }
 
-func TestOnlyActiveProviderCredentialsChange(t *testing.T) {
+func TestRightcodeCredentialsChange(t *testing.T) {
 	before := "model_provider = 'vendor' # unchanged\nmodel = 'keep'\n[model_providers.rightcode]\nbase_url = 'old' # URL\nexperimental_bearer_token = 'old'\nname = 'keep'\n[model_providers.other]\nbase_url = 'untouched'\nexperimental_bearer_token = 'untouched'\n"
 	next, _, err := patchCredentials([]byte(before), "new-url", "new-token", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := strings.Replace(before, "base_url = 'old'", "base_url = 'new-url'", 1)
+	want := strings.Replace(before, "model_provider = 'vendor'", `model_provider = "rightcode"`, 1)
+	want = strings.Replace(want, "base_url = 'old'", "base_url = 'new-url'", 1)
 	want = strings.Replace(want, "experimental_bearer_token = 'old'", "experimental_bearer_token = 'new-token'", 1)
 	if string(next) != want {
 		t.Fatalf("unexpected patch:\n%s", next)

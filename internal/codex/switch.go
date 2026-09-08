@@ -75,8 +75,8 @@ func apply(path, baseURL, token string, clear bool) (*SwitchResult, error) {
 
 // TOML node ranges preserve unrelated settings, comments and multiline strings.
 func patchCredentials(content []byte, baseURL, token string, clear bool) ([]byte, string, error) {
-	// rightcode is the fixed third-party provider section. model_provider is
-	// intentionally left untouched; OpenAI mode only clears this section.
+	// rightcode is the fixed third-party provider section selected by profile
+	// switches; OpenAI mode only clears this section.
 	provider := "rightcode"
 	type edit struct {
 		start, end int
@@ -84,8 +84,10 @@ func patchCredentials(content []byte, baseURL, token string, clear bool) ([]byte
 	}
 	var edits []edit
 	found := map[string]bool{}
+	modelProviderFound := false
 	var section []string
 	insertAt := -1
+	modelProviderInsertAt := -1
 	newline := "\n"
 	if bytes.Contains(content, []byte("\r\n")) {
 		newline = "\r\n"
@@ -108,12 +110,28 @@ func patchCredentials(content []byte, baseURL, token string, clear bool) ([]byte
 		}
 		if node.Kind != unstable.KeyValue {
 			section = keys
+			if !clear && modelProviderInsertAt < 0 {
+				modelProviderInsertAt = bytes.LastIndexByte(content[:keyStart], '\n') + 1
+			}
 			if node.Kind == unstable.Table && len(keys) == 2 && keys[0] == "model_providers" && keys[1] == provider {
 				insertAt = len(content)
 				if offset := bytes.IndexByte(content[keyStart:], '\n'); offset >= 0 {
 					insertAt = keyStart + offset + 1
 				}
 			}
+			continue
+		}
+		if !clear && len(section) == 0 && len(keys) == 1 && keys[0] == "model_provider" {
+			value := node.Value()
+			if value.Kind != unstable.String {
+				return nil, "", fmt.Errorf("model_provider must be a string")
+			}
+			modelProviderFound = true
+			edits = append(edits, edit{
+				start: int(value.Raw.Offset),
+				end:   int(value.Raw.Offset + value.Raw.Length),
+				text:  `"` + provider + `"`,
+			})
 			continue
 		}
 		path := append(append([]string{}, section...), keys...)
@@ -184,6 +202,16 @@ func patchCredentials(content []byte, baseURL, token string, clear bool) ([]byte
 				text = newline + text
 			}
 			edits = append(edits, edit{insertAt, insertAt, text})
+		}
+		if !modelProviderFound {
+			if modelProviderInsertAt < 0 {
+				modelProviderInsertAt = len(content)
+			}
+			text := "model_provider = \"" + provider + "\"" + newline
+			if modelProviderInsertAt > 0 && content[modelProviderInsertAt-1] != '\n' {
+				text = newline + text
+			}
+			edits = append(edits, edit{modelProviderInsertAt, modelProviderInsertAt, text})
 		}
 	}
 	sort.SliceStable(edits, func(i, j int) bool { return edits[i].start > edits[j].start })

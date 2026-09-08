@@ -10,7 +10,7 @@ It patches only:
 
 - `~/.codex/config.toml`
 
-It never reads or writes `auth.json`, and never changes `model_provider` or `model`.
+It never reads or writes `auth.json` or changes `model`. Profile switching sets `model_provider = "rightcode"`.
 
 ## Build
 
@@ -52,7 +52,7 @@ api_key = "sk-xxx"
 
 ## Notes
 
-- `use NAME` writes the profile's `base_url` and `api_key` into `base_url` and `experimental_bearer_token` in the fixed `[model_providers.rightcode]` section. Missing fields or the section are created.
+- `use NAME` sets `model_provider = "rightcode"`, then writes the profile's `base_url` and `api_key` into `base_url` and `experimental_bearer_token` in the fixed `[model_providers.rightcode]` section. Missing fields or the section are created.
 - The profile's `provider` is only a display label and is ignored for switching.
 - `openai` and `use openai` delete those two overrides from `[model_providers.rightcode]`. `use opneai` is also accepted. No saved OpenAI profile or auth source is required.
 - OpenAI switching clears overrides only; it does not repair an old custom provider or restore credentials overwritten by earlier versions. Prepare your desired provider and login separately if needed.
